@@ -16,7 +16,9 @@ from urllib.error import URLError, HTTPError
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PODCASTS_FILE = os.path.join(SCRIPT_DIR, 'podcasts.json')
 OUTPUT_FILE = os.path.join(SCRIPT_DIR, 'daily_playlist.html')
+INDEX_FILE = os.path.join(SCRIPT_DIR, 'index.html')  # GitHub Pages 入口
 CONFIG_FILE = os.path.join(SCRIPT_DIR, 'config.json')
+PAGE_URL = 'https://slb0606-debug.github.io/daily-podcast-player/'
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -798,29 +800,35 @@ def send_pushplus_notification(page_url, daily_data, playable_count):
             dur = ep.get('duration_seconds', 0)
             total_minutes += dur // 60
     
-    # 构建推送内容 - 直接嵌入完整播放页面（含播放器+自动连播）
+    # 构建推送内容 - 摘要 + GitHub Pages 播放页面链接
     title = f"🎧 播客早报 | {today} {weekday}"
     
-    # 读取生成的播放页面HTML
-    if os.path.exists(OUTPUT_FILE):
-        with open(OUTPUT_FILE, 'r', encoding='utf-8') as f:
-            content_html = f.read()
-        print("  📄 已加载完整播放页面用于推送")
-    else:
-        # fallback: 无HTML文件时发送摘要+音频链接
-        content_html = f"""
-        <h3>🎧 每日播客早报 - {today} {weekday}</h3>
-        <p>今日更新 <b>{daily_data['updated_count']}</b> 档播客，共 <b>{playable_count}</b> 期可收听</p>
-        <hr>
-        """
-        for item in daily_data['podcasts']:
-            if item.get('episodes'):
-                ep = item['episodes'][0]
-                dur = ep.get('duration', '未知')
-                audio_url = ep.get('audio_url', '')
-                content_html += f"""<p>✅ <b>{item['name']}</b> ({dur})<br><a href="{audio_url}">🔊 点击播放</a></p>"""
-            else:
-                content_html += f"""<p style="color:#999">❌ {item['name']} - 今日无更新</p>"""
+    content_html = f"""
+    <h3>🎧 每日播客早报 - {today} {weekday}</h3>
+    <p>今日更新 <b>{daily_data['updated_count']}</b> 档播客，共 <b>{playable_count}</b> 期可收听，预计时长 <b>{total_minutes}分钟</b></p>
+    <hr>
+    """
+    
+    # 按播客列出更新
+    for item in daily_data['podcasts']:
+        if item.get('episodes'):
+            ep = item['episodes'][0]
+            dur = ep.get('duration', '未知')
+            ep_title = ep['title'][:60] + ('...' if len(ep['title']) > 60 else '')
+            content_html += f"""
+            <p>✅ <b>{item['name']}</b> | {dur}<br>
+            <span style="color:#666;font-size:0.9em">{ep_title}</span></p>
+            """
+        else:
+            content_html += f"""<p style="color:#999">❌ {item['name']} - 今日无更新</p>"""
+    
+    content_html += f"""
+    <hr>
+    <p style="text-align:center;margin-top:20px">
+    <a href="{PAGE_URL}" style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;padding:10px 24px;border-radius:20px;text-decoration:none;font-weight:bold">🎧 打开播放页面</a>
+    </p>
+    <p style="color:#999;font-size:0.8em;text-align:center;margin-top:10px">支持页面内直接播放 · 自动连续播放</p>
+    """
     
     # 发送请求
     try:
@@ -894,6 +902,8 @@ def main():
     
     with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
         f.write(html)
+    with open(INDEX_FILE, 'w', encoding='utf-8') as f:
+        f.write(html)
     
     print(f"✅ 已保存到: {OUTPUT_FILE}")
     print()
@@ -906,16 +916,40 @@ def main():
     print(f"🎵 可播放单集: {playable} 期")
     print("=" * 50)
     
-    # 发送微信推送（如果传入了页面URL）
-    if len(sys.argv) > 1 and sys.argv[1].startswith('http'):
-        page_url = sys.argv[1]
-        print(f"\n📱 正在发送微信推送...")
-        send_pushplus_notification(page_url, daily_data, playable)
-    elif os.path.exists(CONFIG_FILE):
+    # 同步到 GitHub Pages
+    if os.path.exists(os.path.join(SCRIPT_DIR, '.git')):
+        sync_to_github(daily_data['updated_count'])
+    
+    # 发送微信推送
+    if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, 'r') as f:
             cfg = json.load(f)
         if cfg.get('pushplus_token'):
-            print("\n💡 提示: 运行 `python3 fetch_podcasts.py <页面URL>` 可同步推送微信通知")
+            print("\n📱 正在发送微信推送...")
+            send_pushplus_notification(PAGE_URL, daily_data, playable)
+
+
+def sync_to_github(updated_count):
+    """将更新后的页面同步到 GitHub Pages"""
+    import subprocess
+    print("\n🔄 正在同步到 GitHub Pages...")
+    try:
+        today = datetime.now().strftime('%Y-%m-%d')
+        cmds = [
+            ['git', 'add', 'index.html', 'daily_playlist.html'],
+            ['git', 'commit', '-m', f'Update {today} ({updated_count} podcasts)'],
+            ['git', 'push'],
+        ]
+        for cmd in cmds:
+            r = subprocess.run(cmd, cwd=SCRIPT_DIR, capture_output=True, text=True, timeout=30)
+            if r.returncode != 0 and cmd[1] != 'commit':  # commit 无变更时返回1是正常的
+                print(f"  ⚠️ git 命令失败: {' '.join(cmd)} -> {r.stderr.strip()}")
+                return False
+        print(f"✅ 已同步到 GitHub Pages: {PAGE_URL}")
+        return True
+    except Exception as e:
+        print(f"  ⚠️ 同步失败: {e}")
+        return False
 
 
 if __name__ == '__main__':
