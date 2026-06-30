@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>每日播客早报 - 2026年06月30日</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            padding-bottom: 140px;
+        }
+        
+        .container { max-width: 900px; margin: 0 auto; }
+        
+        .header {
+            text-align: center; color: white; margin-bottom: 30px; padding: 20px;
+        }
+        .header h1 {
+            font-size: 2.2em; margin-bottom: 10px; text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        .header .date { font-size: 1.1em; opacity: 0.9; }
+        .header .stats { margin-top: 15px; font-size: 0.95em; opacity: 0.85; }
+        
+        .category-section {
+            background: white; border-radius: 16px; padding: 20px;
+            margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        .category-title {
+            font-size: 1.3em; color: #333; margin-bottom: 15px;
+            padding-bottom: 10px; border-bottom: 2px solid #f0f0f0;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .category-icon { font-size: 1.2em; }
+        
+        .episode-card {
+            background: #f8f9fa; border-radius: 12px; padding: 15px;
+            margin-bottom: 12px; transition: all 0.3s ease;
+            border: 1px solid #eee;
+        }
+        .episode-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            border-color: #667eea;
+        }
+        .episode-card.playing {
+            border-color: #667eea;
+            background: linear-gradient(135deg, rgba(102,126,234,0.05) 0%, rgba(118,75,162,0.05) 100%);
+            box-shadow: 0 4px 16px rgba(102,126,234,0.2);
+        }
+        .episode-card:last-child { margin-bottom: 0; }
+        
+        .episode-header {
+            display: flex; justify-content: space-between;
+            align-items: flex-start; margin-bottom: 8px;
+        }
+        .podcast-name { font-size: 0.85em; color: #667eea; font-weight: 600; }
+        .episode-meta { font-size: 0.8em; color: #999; display: flex; gap: 10px; }
+        
+        .episode-title {
+            font-size: 1em; color: #333; line-height: 1.5; margin-bottom: 10px;
+        }
+        .episode-title a { color: inherit; text-decoration: none; }
+        .episode-title a:hover { color: #667eea; }
+        
+        .episode-actions {
+            display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        }
+        
+        .play-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; padding: 8px 18px; border-radius: 20px;
+            font-size: 0.85em; font-weight: 500; border: none;
+            cursor: pointer; transition: all 0.3s ease;
+        }
+        .play-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        .play-btn.is-playing {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        
+        .link-btn {
+            color: #667eea; font-size: 0.85em; text-decoration: none;
+            padding: 8px 12px; border-radius: 20px;
+            border: 1px solid #e0e0e0; transition: all 0.2s;
+        }
+        .link-btn:hover { background: #f0f0ff; border-color: #667eea; }
+        
+        .no-update {
+            color: #999; font-style: italic; font-size: 0.9em;
+            padding: 10px; text-align: center;
+        }
+        
+        /* 底部固定播放器 */
+        .player-bar {
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background: rgba(255,255,255,0.98);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-top: 1px solid rgba(0,0,0,0.08);
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.1);
+            z-index: 1000; padding: 0;
+            transform: translateY(100%);
+            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .player-bar.visible { transform: translateY(0); }
+        
+        .player-progress-bar {
+            width: 100%; height: 3px; background: #e8e8e8;
+            cursor: pointer; position: relative;
+        }
+        .player-progress-fill {
+            height: 100%; background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%; transition: width 0.3s linear; border-radius: 0 2px 2px 0;
+        }
+        
+        .player-content {
+            display: flex; align-items: center; padding: 12px 20px;
+            max-width: 900px; margin: 0 auto; gap: 15px;
+        }
+        
+        .player-info {
+            flex: 1; min-width: 0;
+        }
+        .player-title {
+            font-size: 0.9em; color: #333; font-weight: 500;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .player-subtitle {
+            font-size: 0.75em; color: #999; margin-top: 2px;
+        }
+        
+        .player-controls {
+            display: flex; align-items: center; gap: 8px;
+        }
+        .player-controls button {
+            background: none; border: none; cursor: pointer;
+            width: 36px; height: 36px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.2em; color: #333; transition: all 0.2s;
+        }
+        .player-controls button:hover { background: #f0f0f0; }
+        .player-controls .main-play-btn {
+            width: 44px; height: 44px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; font-size: 1.3em;
+        }
+        .player-controls .main-play-btn:hover {
+            transform: scale(1.08);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .player-time {
+            font-size: 0.75em; color: #999; white-space: nowrap;
+        }
+        
+        .player-queue-btn {
+            font-size: 0.8em !important; color: #667eea !important;
+            position: relative;
+        }
+        .player-queue-btn .queue-count {
+            position: absolute; top: -2px; right: -4px;
+            background: #f5576c; color: white; font-size: 0.6em;
+            width: 16px; height: 16px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+        }
+        
+        /* 播放队列面板 */
+        .queue-panel {
+            position: fixed; bottom: 80px; right: 20px;
+            width: 340px; max-height: 400px;
+            background: white; border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+            z-index: 1001; overflow: hidden;
+            transform: translateY(20px) scale(0.95);
+            opacity: 0; pointer-events: none;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .queue-panel.visible {
+            transform: translateY(0) scale(1);
+            opacity: 1; pointer-events: auto;
+        }
+        .queue-panel-header {
+            padding: 16px; font-weight: 600; font-size: 0.95em;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .queue-panel-header button {
+            background: none; border: none; cursor: pointer;
+            color: #667eea; font-size: 0.85em;
+        }
+        .queue-list {
+            max-height: 320px; overflow-y: auto; padding: 8px;
+        }
+        .queue-item {
+            padding: 10px 12px; border-radius: 8px; cursor: pointer;
+            display: flex; align-items: center; gap: 10px;
+            transition: background 0.2s; font-size: 0.85em;
+        }
+        .queue-item:hover { background: #f8f9fa; }
+        .queue-item.active { background: linear-gradient(135deg, rgba(102,126,234,0.1) 0%, rgba(118,75,162,0.1) 100%); }
+        .queue-item-index {
+            width: 20px; text-align: center; color: #999; font-size: 0.8em;
+        }
+        .queue-item.active .queue-item-index { color: #667eea; font-weight: 600; }
+        .queue-item-title {
+            flex: 1; white-space: nowrap; overflow: hidden;
+            text-overflow: ellipsis; color: #333;
+        }
+        .queue-item-dur { color: #999; font-size: 0.8em; white-space: nowrap; }
+        
+        /* 全部播放按钮 */
+        .play-all-section {
+            text-align: center; margin: 20px 0;
+        }
+        .play-all-btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            background: white; color: #667eea;
+            padding: 12px 28px; border-radius: 30px;
+            font-size: 1em; font-weight: 600; border: 2px solid white;
+            cursor: pointer; transition: all 0.3s;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+        }
+        .play-all-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(102,126,234,0.3);
+        }
+        
+        .footer {
+            text-align: center; color: white; padding: 20px;
+            font-size: 0.9em; opacity: 0.8;
+        }
+        .footer a { color: white; text-decoration: underline; }
+        .update-time {
+            text-align: center; color: rgba(255,255,255,0.7);
+            font-size: 0.85em; margin-top: 10px;
+        }
+        
+        @media (max-width: 600px) {
+            .header h1 { font-size: 1.6em; }
+            .category-section { padding: 15px; }
+            .episode-card { padding: 12px; }
+            .player-content { padding: 10px 15px; }
+            .queue-panel { width: calc(100% - 20px); right: 10px; left: 10px; }
+        }
+        
+        /* 动画 */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .playing-indicator {
+            display: inline-flex; gap: 2px; align-items: flex-end; height: 14px;
+        }
+        .playing-indicator span {
+            width: 3px; background: #667eea; border-radius: 1px;
+            animation: soundbar 0.6s ease-in-out infinite;
+        }
+        .playing-indicator span:nth-child(1) { height: 6px; animation-delay: 0s; }
+        .playing-indicator span:nth-child(2) { height: 10px; animation-delay: 0.15s; }
+        .playing-indicator span:nth-child(3) { height: 4px; animation-delay: 0.3s; }
+        @keyframes soundbar {
+            0%, 100% { transform: scaleY(1); }
+            50% { transform: scaleY(0.4); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎧 每日播客早报</h1>
+            <div class="date">2026年06月30日 周二</div>
+            <div class="stats">
+                已收录 9 档播客 · 
+                今日更新 7 档 · 
+                预计收听时长 约247分钟
+            </div>
+        </div>
+        
+        <div class="play-all-section">
+            <button class="play-all-btn" onclick="playAll()">
+                ▶ 从第一档开始连续播放
+            </button>
+        </div>
+
+
+        <div class="category-section">
+            <div class="category-title">
+                <span class="category-icon">💼</span>
+                商业/科技
+            </div>
+
+            <div class="episode-card" data-audio="https://media.xyzcdn.net/60de7c003dd577b40d5a40f3/lshhHVsL0u4Glvr7lc455aI6Zrk2.m4a" data-has-audio="true" data-podcast="声动早咖啡">
+                <div class="episode-header">
+                    <span class="podcast-name">声动早咖啡</span>
+                    <span class="episode-meta">
+                        <span>⏱ 11分钟</span>
+                    </span>
+                </div>
+                <div class="episode-title">
+                    <a href="https://www.xiaoyuzhoufm.com/episode/6a4240df2e335a35a80b3afc" target="_blank">她研社｜腾讯内测面向境外游客的应用，古茗即饮果汁将进入零售渠道</a>
+                </div>
+                <div class="episode-actions">
+                    <button class="play-btn" onclick="playEpisode(this)" data-audio="https://media.xyzcdn.net/60de7c003dd577b40d5a40f3/lshhHVsL0u4Glvr7lc455aI6Zrk2.m4a">▶ 播放</button>
+                    <a href="https://www.xiaoyuzhoufm.com/episode/6a4240df2e335a35a80b3afc" target="_blank" class="link-btn">在小宇宙打开 ↗</a>
+                </div>
+            </div>
+
+            <div class="episode-card" data-audio="https://media.xyzcdn.net/699ec17f16d4722b7bf42fb3/lmtvv6mceBwzWZsbVFSUmhaCV6Z9.m4a" data-has-audio="true" data-podcast="罗盘 Compass">
+                <div class="episode-header">
+                    <span class="podcast-name">罗盘 Compass</span>
+                    <span class="episode-meta">
+                        <span>⏱ 8分钟</span>
+                    </span>
+                </div>
+                <div class="episode-title">
+                    <a href="https://www.xiaoyuzhoufm.com/episode/69e052efe2c8be31555778e9" target="_blank">2026-04-16｜地缘棋局、情感生意与AI围墙：我们时代的连接与困境</a>
+                </div>
+                <div class="episode-actions">
+                    <button class="play-btn" onclick="playEpisode(this)" data-audio="https://media.xyzcdn.net/699ec17f16d4722b7bf42fb3/lmtvv6mceBwzWZsbVFSUmhaCV6Z9.m4a">▶ 播放</button>
+                    <a href="https://www.xiaoyuzhoufm.com/episode/69e052efe2c8be31555778e9" target="_blank" class="link-btn">在小宇宙打开 ↗</a>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="category-section">
+            <div class="category-title">
+                <span class="category-icon">📈</span>
+                商业新闻
+            </div>
+
+            <div class="episode-card" data-audio="https://media.xyzcdn.net/697a0a6f24d11032619793d1/lubBkt5A-ZWjQELhDWLRSghYieBB.m4a" data-has-audio="true" data-podcast="商业早8点">
+                <div class="episode-header">
+                    <span class="podcast-name">商业早8点</span>
+                    <span class="episode-meta">
+                        <span>⏱ 16分钟</span>
+                    </span>
+                </div>
+                <div class="episode-title">
+                    <a href="https://www.xiaoyuzhoufm.com/episode/6a427a189d2f5743683fd11e" target="_blank">6月30日 周二. 央视曝光「手机测评」云端作弊/中外合办大学录取分飙升/「DeepSeek」大转型</a>
+                </div>
+                <div class="episode-actions">
+                    <button class="play-btn" onclick="playEpisode(this)" data-audio="https://media.xyzcdn.net/697a0a6f24d11032619793d1/lubBkt5A-ZWjQELhDWLRSghYieBB.m4a">▶ 播放</button>
+                    <a href="https://www.xiaoyuzhoufm.com/episode/6a427a189d2f5743683fd11e" target="_blank" class="link-btn">在小宇宙打开 ↗</a>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="category-section">
+            <div class="category-title">
+                <span class="category-icon">📰</span>
+                综合资讯
+            </div>
+
+            <div class="episode-card">
+                <div class="episode-header">
+                    <span class="podcast-name">资讯早7点</span>
+                </div>
+                <div class="no-update">暂未收录小宇宙链接</div>
+            </div>
+
+            <div class="episode-card" data-audio="https://media.xyzcdn.net/69d4d05e43e49706373e21e1/liD3_vZ3QdiJMbTtKpuqLMXq4eJn.m4a" data-has-audio="true" data-podcast="资讯早早茶">
+                <div class="episode-header">
+                    <span class="podcast-name">资讯早早茶</span>
+                    <span class="episode-meta">
+                        <span>⏱ 11分钟</span>
+                    </span>
+                </div>
+                <div class="episode-title">
+                    <a href="https://www.xiaoyuzhoufm.com/episode/6a42880f9d2f5743683fd9a6" target="_blank">0630 2026年暑期旅游市场全面启动 西安至十堰高速铁路今起运营 在欧洲海信空调“一机难求”</a>
+                </div>
+                <div class="episode-actions">
+                    <button class="play-btn" onclick="playEpisode(this)" data-audio="https://media.xyzcdn.net/69d4d05e43e49706373e21e1/liD3_vZ3QdiJMbTtKpuqLMXq4eJn.m4a">▶ 播放</button>
+                    <a href="https://www.xiaoyuzhoufm.com/episode/6a42880f9d2f5743683fd9a6" target="_blank" class="link-btn">在小宇宙打开 ↗</a>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="category-section">
+            <div class="category-title">
+                <span class="category-icon">🤖</span>
+                科技/AI
+            </div>
+
+            <div class="episode-card" data-audio="https://media.xyzcdn.net/6974dcfecc1b94e8e864d34c/ltpQ4JtbX6gUCY6N9IeqwkpcedLi.m4a" data-has-audio="true" data-podcast="科技早8点">
+                <div class="episode-header">
+                    <span class="podcast-name">科技早8点</span>
+                    <span class="episode-meta">
+                        <span>⏱ 17分钟</span>
+                    </span>
+                </div>
+                <div class="episode-title">
+                    <a href="https://www.xiaoyuzhoufm.com/episode/6a42764b9d2f5743683fceb6" target="_blank">6月30日 周二.「苹果设计师」为何集体逃离/马斯克「Grok 4.5」开启内测/「Steam主机」售价惊曝</a>
+                </div>
+                <div class="episode-actions">
+                    <button class="play-btn" onclick="playEpisode(this)" data-audio="https://media.xyzcdn.net/6974dcfecc1b94e8e864d34c/ltpQ4JtbX6gUCY6N9IeqwkpcedLi.m4a">▶ 播放</button>
+                    <a href="https://www.xiaoyuzhoufm.com/episode/6a42764b9d2f5743683fceb6" target="_blank" class="link-btn">在小宇宙打开 ↗</a>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="category-section">
+            <div class="category-title">
+                <span class="category-icon">⚡</span>
+                科技快讯
+            </div>
+
+            <div class="episode-card" data-audio="https://media.xyzcdn.net/69ac11c634534b3fe42aec1c/luHe4kjduJ6ONU8BAEgJH5A0vClr.m4a" data-has-audio="true" data-podcast="十分科技">
+                <div class="episode-header">
+                    <span class="podcast-name">十分科技</span>
+                    <span class="episode-meta">
+                        <span>⏱ 10分钟</span>
+                    </span>
+                </div>
+                <div class="episode-title">
+                    <a href="https://www.xiaoyuzhoufm.com/episode/6a41a2282e335a35a80acf63" target="_blank">十分科技 | 6月29日 福特重金请回老工程师，GLM-5.2安全测评超Claude</a>
+                </div>
+                <div class="episode-actions">
+                    <button class="play-btn" onclick="playEpisode(this)" data-audio="https://media.xyzcdn.net/69ac11c634534b3fe42aec1c/luHe4kjduJ6ONU8BAEgJH5A0vClr.m4a">▶ 播放</button>
+                    <a href="https://www.xiaoyuzhoufm.com/episode/6a41a2282e335a35a80acf63" target="_blank" class="link-btn">在小宇宙打开 ↗</a>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="category-section">
+            <div class="category-title">
+                <span class="category-icon">💰</span>
+                财经
+            </div>
+
+            <div class="episode-card" data-audio="https://media.xyzcdn.net/66e12e678fcf4d343c4e4896/lt6YBKvIDt7CtAMMPMTas10Z4IU8.m4a" data-has-audio="true" data-podcast="财经早餐">
+                <div class="episode-header">
+                    <span class="podcast-name">财经早餐</span>
+                    <span class="episode-meta">
+                        <span>⏱ 8分钟</span>
+                    </span>
+                </div>
+                <div class="episode-title">
+                    <a href="https://www.xiaoyuzhoufm.com/episode/6a42764c2e335a35a80b5508" target="_blank">【财经早餐】2026.06.30星期二</a>
+                </div>
+                <div class="episode-actions">
+                    <button class="play-btn" onclick="playEpisode(this)" data-audio="https://media.xyzcdn.net/66e12e678fcf4d343c4e4896/lt6YBKvIDt7CtAMMPMTas10Z4IU8.m4a">▶ 播放</button>
+                    <a href="https://www.xiaoyuzhoufm.com/episode/6a42764c2e335a35a80b5508" target="_blank" class="link-btn">在小宇宙打开 ↗</a>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="category-section">
+            <div class="category-title">
+                <span class="category-icon">💄</span>
+                美妆
+            </div>
+
+            <div class="episode-card">
+                <div class="episode-header">
+                    <span class="podcast-name">美妆老友记</span>
+                </div>
+                <div class="no-update">今日暂无更新</div>
+                <div style="text-align: center; margin-top: 8px;">
+                    <a href="https://www.xiaoyuzhoufm.com/podcast/6449f695306513184c85f1ab" target="_blank" style="color: #667eea; font-size: 0.85em; text-decoration: none;">查看播客主页 →</a>
+                </div>
+            </div>
+
+        </div>
+
+
+        <div class="footer">
+            <p>数据来源：<a href="https://www.xiaoyuzhoufm.com" target="_blank">小宇宙</a> · 每日自动更新</p>
+            <p style="margin-top: 8px; font-size: 0.85em;">
+                提示：点击"播放"可直接在页面内收听，支持自动连续播放
+            </p>
+        </div>
+        <div class="update-time">
+            上次更新：2026-06-30 11:28
+        </div>
+    </div>
+    
+    <!-- 底部播放器 -->
+    <div class="player-bar" id="playerBar">
+        <div class="player-progress-bar" id="progressBar" onclick="seekAudio(event)">
+            <div class="player-progress-fill" id="progressFill"></div>
+        </div>
+        <div class="player-content">
+            <div class="player-info">
+                <div class="player-title" id="playerTitle">未在播放</div>
+                <div class="player-subtitle" id="playerSubtitle"></div>
+            </div>
+            <div class="player-time" id="playerTime"></div>
+            <div class="player-controls">
+                <button onclick="playPrev()" title="上一个">⏮</button>
+                <button class="main-play-btn" id="mainPlayBtn" onclick="togglePlay()">▶</button>
+                <button onclick="playNext()" title="下一个">⏭</button>
+                <button class="player-queue-btn" onclick="toggleQueue()" title="播放列表">
+                    ☰<span class="queue-count" id="queueCount">21</span>
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 播放队列面板 -->
+    <div class="queue-panel" id="queuePanel">
+        <div class="queue-panel-header">
+            <span>播放列表 (21 期)</span>
+            <button onclick="toggleQueue()">收起</button>
+        </div>
+        <div class="queue-list" id="queueList"></div>
+    </div>
+
+    <script>
+        // 播放列表数据
+        const playlist = [{"title": "她研社｜腾讯内测面向境外游客的应用，古茗即饮果汁将进入零售渠道", "podcast": "声动早咖啡", "audio_url": "https://media.xyzcdn.net/60de7c003dd577b40d5a40f3/lshhHVsL0u4Glvr7lc455aI6Zrk2.m4a", "duration_seconds": 675, "url": "https://www.xiaoyuzhoufm.com/episode/6a4240df2e335a35a80b3afc"}, {"title": "她研社｜披萨、炸鸡和奶茶店纷纷卖起「能量碗」，餐饮品牌为什么要重新开始做轻食？", "podcast": "声动早咖啡", "audio_url": "https://media.xyzcdn.net/60de7c003dd577b40d5a40f3/lmPP0BfqQMjrZvptRBbBf22Br3n6.m4a", "duration_seconds": 1008, "url": "https://www.xiaoyuzhoufm.com/episode/6a413ee49d2f5743683f3c1a"}, {"title": "vivo｜咖啡豆：「新鲜零食」概念火热，这门生意如何吸引老牌零食玩家相继试水？", "podcast": "声动早咖啡", "audio_url": "https://media.xyzcdn.net/60de7c003dd577b40d5a40f3/lj1AZrWZ01Fyos35TEN0eXJ_VleC.m4a", "duration_seconds": 1006, "url": "https://www.xiaoyuzhoufm.com/episode/6a3d1b439d2f5743683dd033"}, {"title": "6月30日 周二. 央视曝光「手机测评」云端作弊/中外合办大学录取分飙升/「DeepSeek」大转型", "podcast": "商业早8点", "audio_url": "https://media.xyzcdn.net/697a0a6f24d11032619793d1/lubBkt5A-ZWjQELhDWLRSghYieBB.m4a", "duration_seconds": 1005, "url": "https://www.xiaoyuzhoufm.com/episode/6a427a189d2f5743683fd11e"}, {"title": "6月29日 周一. 多家民营银行下架「长期存款」/美团「美团」王兴公开致歉/「老铺黄金」的百亿存货危机", "podcast": "商业早8点", "audio_url": "https://media.xyzcdn.net/697a0a6f24d11032619793d1/lmDSCcz1z-0yX-h-FdJFZXVWtQg5.m4a", "duration_seconds": 875, "url": "https://www.xiaoyuzhoufm.com/episode/6a41286a9d2f5743683f2efd"}, {"title": "6月28日 周日.「美伊」刚停火又开打/「闲鱼」成AI超级市场/平价零食“卷”进北京城", "podcast": "商业早8点", "audio_url": "https://media.xyzcdn.net/697a0a6f24d11032619793d1/lrmx4uKJD2GiEwhjZMv0nHrZIAIL.m4a", "duration_seconds": 841, "url": "https://www.xiaoyuzhoufm.com/episode/6a3ff6339d2f5743683ed17a"}, {"title": "0630 2026年暑期旅游市场全面启动 西安至十堰高速铁路今起运营 在欧洲海信空调“一机难求”", "podcast": "资讯早早茶", "audio_url": "https://media.xyzcdn.net/69d4d05e43e49706373e21e1/liD3_vZ3QdiJMbTtKpuqLMXq4eJn.m4a", "duration_seconds": 675, "url": "https://www.xiaoyuzhoufm.com/episode/6a42880f9d2f5743683fd9a6"}, {"title": "0629｜2026暑期档电影票房突破15亿元、世界杯淘汰赛开启", "podcast": "资讯早早茶", "audio_url": "https://media.xyzcdn.net/69d4d05e43e49706373e21e1/ltSTObGbYDJEjEGY25e8pri_H0bJ.m4a", "duration_seconds": 636, "url": "https://www.xiaoyuzhoufm.com/episode/6a41af9e2e335a35a80ad176"}, {"title": "0628｜我国在“人造太阳”领域取得新突破、世界杯今日决出32强、针对C盘空间争议，WPS新版本将于7月上线", "podcast": "资讯早早茶", "audio_url": "https://media.xyzcdn.net/69d4d05e43e49706373e21e1/liLcJAZkbrjStLoBrqu8qS56KmZ7.m4a", "duration_seconds": 665, "url": "https://www.xiaoyuzhoufm.com/episode/6a4060549d2f5743683ede61"}, {"title": "2026-04-16｜地缘棋局、情感生意与AI围墙：我们时代的连接与困境", "podcast": "罗盘 Compass", "audio_url": "https://media.xyzcdn.net/699ec17f16d4722b7bf42fb3/lmtvv6mceBwzWZsbVFSUmhaCV6Z9.m4a", "duration_seconds": 510, "url": "https://www.xiaoyuzhoufm.com/episode/69e052efe2c8be31555778e9"}, {"title": "2026-04-14|匈牙利变局、AI芯片突破与地缘火药桶", "podcast": "罗盘 Compass", "audio_url": "https://media.xyzcdn.net/699ec17f16d4722b7bf42fb3/ltAA31qn-1zqYUiZ_ymMHzCkePsv.m4a", "duration_seconds": 710, "url": "https://www.xiaoyuzhoufm.com/episode/69ddd1aeb977fb2c47e38c7d"}, {"title": "2026-04-13｜在燃烧瓶与平衡术之间：AI的伦理阵痛与地缘暗流", "podcast": "罗盘 Compass", "audio_url": "https://media.xyzcdn.net/699ec17f16d4722b7bf42fb3/lk8IzLNtwKcyJFReaJgUd6HpsuY7.m4a", "duration_seconds": 817, "url": "https://www.xiaoyuzhoufm.com/episode/69dc57dbb977fb2c47c75594"}, {"title": "6月30日 周二.「苹果设计师」为何集体逃离/马斯克「Grok 4.5」开启内测/「Steam主机」售价惊曝", "podcast": "科技早8点", "audio_url": "https://media.xyzcdn.net/6974dcfecc1b94e8e864d34c/ltpQ4JtbX6gUCY6N9IeqwkpcedLi.m4a", "duration_seconds": 1073, "url": "https://www.xiaoyuzhoufm.com/episode/6a42764b9d2f5743683fceb6"}, {"title": "6月29日 周一.「DeepSeek」开源“DSpark”思考速度提升85%/「OpenAI」IPO或将推迟至2027", "podcast": "科技早8点", "audio_url": "https://media.xyzcdn.net/6974dcfecc1b94e8e864d34c/ltrG-918NrVxYBpLiVH5FNA0shCY.m4a", "duration_seconds": 692, "url": "https://www.xiaoyuzhoufm.com/episode/6a4127f72e335a35a80ab466"}, {"title": "6月28日 周日「GPT-5.6」Solar家族发布/「iPhone 18」泄密打乱「苹果」节奏/「苹果」涨价内幕", "podcast": "科技早8点", "audio_url": "https://media.xyzcdn.net/6974dcfecc1b94e8e864d34c/lvdcMSpljgFQ_mgTHkd5vueMD8NG.m4a", "duration_seconds": 841, "url": "https://www.xiaoyuzhoufm.com/episode/6a3ff5ee2e335a35a80a57c0"}, {"title": "十分科技 | 6月29日 福特重金请回老工程师，GLM-5.2安全测评超Claude", "podcast": "十分科技", "audio_url": "https://media.xyzcdn.net/69ac11c634534b3fe42aec1c/luHe4kjduJ6ONU8BAEgJH5A0vClr.m4a", "duration_seconds": 622, "url": "https://www.xiaoyuzhoufm.com/episode/6a41a2282e335a35a80acf63"}, {"title": "十分科技 | 6月26日 白宫罕见叫停OpenAI新模型，苹果因内存荒全线涨价", "podcast": "十分科技", "audio_url": "https://media.xyzcdn.net/69ac11c634534b3fe42aec1c/lqfoiiezZcDk60SrkLWAJW0_44fH.m4a", "duration_seconds": 550, "url": "https://www.xiaoyuzhoufm.com/episode/6a3dbfcc2e335a35a8098236"}, {"title": "十分科技 | 6月25日 OpenAI首发自研芯片Jalapeño，高通近40亿美元收购Modular", "podcast": "十分科技", "audio_url": "https://media.xyzcdn.net/69ac11c634534b3fe42aec1c/lnDXlXyKkw0tjhpoCzWv8HqhAN9T.m4a", "duration_seconds": 664, "url": "https://www.xiaoyuzhoufm.com/episode/6a3c5d842e335a35a808ed88"}, {"title": "【财经早餐】2026.06.30星期二", "podcast": "财经早餐", "audio_url": "https://media.xyzcdn.net/66e12e678fcf4d343c4e4896/lt6YBKvIDt7CtAMMPMTas10Z4IU8.m4a", "duration_seconds": 531, "url": "https://www.xiaoyuzhoufm.com/episode/6a42764c2e335a35a80b5508"}, {"title": "Femorning06.30", "podcast": "财经早餐", "audio_url": "https://media.xyzcdn.net/66e12e678fcf4d343c4e4896/lriNqoBH4X0m31iV1btGVDDiXTAn.m4a", "duration_seconds": 620, "url": "https://www.xiaoyuzhoufm.com/episode/6a423e892e335a35a80b398d"}, {"title": "【财经早餐粤语版】2026.06.30星期二", "podcast": "财经早餐", "audio_url": "https://media.xyzcdn.net/66e12e678fcf4d343c4e4896/lnNUG6vAfqbFLEKk2_uAOtZ3NA-q.m4a", "duration_seconds": 399, "url": "https://www.xiaoyuzhoufm.com/episode/6a423de89d2f5743683fb33b"}];
+        
+        // 播放器状态
+        let audio = new Audio();
+        let currentIndex = -1;
+        let isPlaying = false;
+        let queueVisible = false;
+        
+        // 初始化
+        audio.addEventListener('timeupdate', updateProgress);
+        audio.addEventListener('ended', onEpisodeEnded);
+        audio.addEventListener('loadedmetadata', onMetadataLoaded);
+        audio.addEventListener('error', onAudioError);
+        
+        // 构建队列面板
+        function buildQueueList() {
+            const list = document.getElementById('queueList');
+            list.innerHTML = playlist.map((item, i) => {
+                const dur = Math.round(item.duration_seconds / 60);
+                return `<div class="queue-item" id="queue-item-${i}" onclick="playByIndex(${i})">
+                    <span class="queue-item-index">${i + 1}</span>
+                    <span class="queue-item-title">${item.title}</span>
+                    <span class="queue-item-dur">${dur}min</span>
+                </div>`;
+            }).join('');
+        }
+        buildQueueList();
+        
+        // 播放指定索引
+        function playByIndex(index) {
+            if (index < 0 || index >= playlist.length) return;
+            currentIndex = index;
+            const item = playlist[index];
+            audio.src = item.audio_url;
+            audio.play().then(() => {
+                isPlaying = true;
+                updatePlayerUI();
+            }).catch(e => {
+                console.error('播放失败:', e);
+                alert('播放失败，可能是音频链接已过期。请点击"在小宇宙打开"前往收听。');
+            });
+        }
+        
+        // 从卡片按钮播放
+        function playEpisode(btn) {
+            const audioUrl = btn.dataset.audio;
+            const index = playlist.findIndex(p => p.audio_url === audioUrl);
+            if (index >= 0) {
+                playByIndex(index);
+            }
+        }
+        
+        // 全部连续播放
+        function playAll() {
+            if (playlist.length > 0) {
+                playByIndex(0);
+            }
+        }
+        
+        // 播放/暂停切换
+        function togglePlay() {
+            if (currentIndex < 0) {
+                playAll();
+                return;
+            }
+            if (isPlaying) {
+                audio.pause();
+                isPlaying = false;
+            } else {
+                audio.play();
+                isPlaying = true;
+            }
+            updatePlayerUI();
+        }
+        
+        // 下一个
+        function playNext() {
+            if (currentIndex < playlist.length - 1) {
+                playByIndex(currentIndex + 1);
+            }
+        }
+        
+        // 上一个
+        function playPrev() {
+            if (currentIndex > 0) {
+                playByIndex(currentIndex - 1);
+            }
+        }
+        
+        // 单集播完自动下一个
+        function onEpisodeEnded() {
+            if (currentIndex < playlist.length - 1) {
+                playByIndex(currentIndex + 1);
+            } else {
+                isPlaying = false;
+                updatePlayerUI();
+            }
+        }
+        
+        // 音频加载完成
+        function onMetadataLoaded() {
+            document.getElementById('playerTime').textContent = 
+                formatTime(audio.duration);
+        }
+        
+        // 音频错误处理
+        function onAudioError() {
+            console.error('音频加载错误');
+            document.getElementById('playerTitle').textContent = '加载失败，请尝试在小宇宙收听';
+        }
+        
+        // 更新进度条
+        function updateProgress() {
+            if (audio.duration) {
+                const pct = (audio.currentTime / audio.duration) * 100;
+                document.getElementById('progressFill').style.width = pct + '%';
+                
+                const remaining = audio.duration - audio.currentTime;
+                document.getElementById('playerTime').textContent = 
+                    '-' + formatTime(remaining);
+            }
+        }
+        
+        // 拖动进度条
+        function seekAudio(e) {
+            if (audio.duration) {
+                const bar = document.getElementById('progressBar');
+                const rect = bar.getBoundingClientRect();
+                const pct = (e.clientX - rect.left) / rect.width;
+                audio.currentTime = pct * audio.duration;
+            }
+        }
+        
+        // 更新播放器 UI
+        function updatePlayerUI() {
+            const bar = document.getElementById('playerBar');
+            const btn = document.getElementById('mainPlayBtn');
+            const title = document.getElementById('playerTitle');
+            const subtitle = document.getElementById('playerSubtitle');
+            
+            if (currentIndex >= 0) {
+                bar.classList.add('visible');
+                const item = playlist[currentIndex];
+                title.textContent = item.title;
+                subtitle.textContent = item.podcast;
+                btn.textContent = isPlaying ? '⏸' : '▶';
+                
+                // 更新队列高亮
+                document.querySelectorAll('.queue-item').forEach((el, i) => {
+                    el.classList.toggle('active', i === currentIndex);
+                });
+                
+                // 更新卡片状态
+                document.querySelectorAll('.episode-card').forEach(card => {
+                    const cardAudio = card.dataset.audio;
+                    if (cardAudio === item.audio_url) {
+                        card.classList.add('playing');
+                        const playBtn = card.querySelector('.play-btn');
+                        if (playBtn) {
+                            playBtn.textContent = isPlaying ? '⏸ 暂停' : '▶ 播放';
+                            playBtn.classList.toggle('is-playing', isPlaying);
+                        }
+                    } else {
+                        card.classList.remove('playing');
+                        const playBtn = card.querySelector('.play-btn');
+                        if (playBtn) {
+                            playBtn.textContent = '▶ 播放';
+                            playBtn.classList.remove('is-playing');
+                        }
+                    }
+                });
+                
+                // 滚动队列到当前项
+                const activeItem = document.getElementById('queue-item-' + currentIndex);
+                if (activeItem && queueVisible) {
+                    activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            } else {
+                btn.textContent = '▶';
+            }
+        }
+        
+        // 切换队列面板
+        function toggleQueue() {
+            queueVisible = !queueVisible;
+            document.getElementById('queuePanel').classList.toggle('visible', queueVisible);
+        }
+        
+        // 格式化时间
+        function formatTime(seconds) {
+            if (!seconds || isNaN(seconds)) return '0:00';
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return m + ':' + (s < 10 ? '0' : '') + s;
+        }
+        
+        // 键盘快捷键
+        document.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            switch(e.code) {
+                case 'Space':
+                    e.preventDefault();
+                    togglePlay();
+                    break;
+                case 'ArrowRight':
+                    if (e.shiftKey) playNext();
+                    break;
+                case 'ArrowLeft':
+                    if (e.shiftKey) playPrev();
+                    break;
+            }
+        });
+    </script>
+</body>
+</html>

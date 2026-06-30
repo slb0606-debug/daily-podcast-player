@@ -1,0 +1,71 @@
+{
+  "podcasts": [
+    {
+      "name": "声动早咖啡",
+      "id": "60de7c003dd577b40d5a40f3",
+      "category": "商业/科技",
+      "url": "https://www.xiaoyuzhoufm.com/podcast/60de7c003dd577b40d5a40f3",
+      "description": "声动活泼出品，15分钟商业科技轻解读"
+    },
+    {
+      "name": "商业早8点",
+      "id": "697a0a6f24d11032619793d1",
+      "category": "商业新闻",
+      "url": "https://www.xiaoyuzhoufm.com/podcast/697a0a6f24d11032619793d1",
+      "description": "棱镜FM出品，每日早间商业动态"
+    },
+    {
+      "name": "资讯早7点",
+      "id": null,
+      "category": "综合资讯",
+      "url": null,
+      "description": "每日清晨资讯播客（暂无小宇宙主页）"
+    },
+    {
+      "name": "资讯早早茶",
+      "id": "69d4d05e43e49706373e21e1",
+      "category": "综合资讯",
+      "url": "https://www.xiaoyuzhoufm.com/podcast/69d4d05e43e49706373e21e1",
+      "description": "每日清晨资讯，主播王晓"
+    },
+    {
+      "name": "罗盘 Compass",
+      "id": "699ec17f16d4722b7bf42fb3",
+      "category": "商业/科技",
+      "url": "https://www.xiaoyuzhoufm.com/podcast/699ec17f16d4722b7bf42fb3",
+      "description": "晨间听觉简报，穿透热点看本质"
+    },
+    {
+      "name": "科技早8点",
+      "id": "6974dcfecc1b94e8e864d34c",
+      "category": "科技/AI",
+      "url": "https://www.xiaoyuzhoufm.com/podcast/6974dcfecc1b94e8e864d34c",
+      "description": "棱镜FM出品，每日科技前沿资讯"
+    },
+    {
+      "name": "十分科技",
+      "id": "69ac11c634534b3fe42aec1c",
+      "category": "科技快讯",
+      "url": "https://www.xiaoyuzhoufm.com/podcast/69ac11c634534b3fe42aec1c",
+      "description": "10分钟硬核科技快讯"
+    },
+    {
+      "name": "财经早餐",
+      "id": "66e12e678fcf4d343c4e4896",
+      "category": "财经",
+      "url": "https://www.xiaoyuzhoufm.com/podcast/66e12e678fcf4d343c4e4896",
+      "description": "每日盘前财经资讯"
+    },
+    {
+      "name": "美妆老友记",
+      "id": "6449f695306513184c85f1ab",
+      "category": "美妆",
+      "url": "https://www.xiaoyuzhoufm.com/podcast/6449f695306513184c85f1ab",
+      "description": "美妆行业资讯解读"
+    }
+  ],
+  "settings": {
+    "update_time": "07:30",
+    "max_episodes_per_podcast": 1
+  }
+}

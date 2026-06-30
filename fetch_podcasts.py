@@ -1,0 +1,922 @@
+#!/usr/bin/env python3
+"""
+播客聚合器 - 从小宇宙获取最新播客单集
+从播客主页提取标题、时长、音频链接，生成带播放器的播放列表页面
+"""
+
+import json
+import re
+import os
+import sys
+from datetime import datetime
+from urllib.request import urlopen, Request
+from urllib.error import URLError, HTTPError
+
+# 配置
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PODCASTS_FILE = os.path.join(SCRIPT_DIR, 'podcasts.json')
+OUTPUT_FILE = os.path.join(SCRIPT_DIR, 'daily_playlist.html')
+CONFIG_FILE = os.path.join(SCRIPT_DIR, 'config.json')
+
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+}
+
+
+def fetch_page(url):
+    """获取页面内容"""
+    try:
+        req = Request(url, headers=HEADERS)
+        with urlopen(req, timeout=30) as response:
+            return response.read().decode('utf-8', errors='ignore')
+    except (URLError, HTTPError) as e:
+        print(f"  ⚠️ 请求失败: {e}")
+        return None
+
+
+def extract_episodes_from_podcast_page(html_content, podcast_name):
+    """从播客主页提取单集信息（标题、时长、音频链接）"""
+    episodes = []
+    
+    # 一次性提取 eid、标题、时长、音频链接
+    pattern = r'"eid":"([a-f0-9]+)".*?"title":"([^"]{10,})".*?"duration":(\d+).*?"enclosure":\{"url":"([^"]+)"\}'
+    matches = re.findall(pattern, html_content)
+    
+    seen_eids = set()
+    for eid, title, duration_sec, audio_url in matches:
+        if eid in seen_eids:
+            continue
+        seen_eids.add(eid)
+        
+        # 过滤掉播客名称本身
+        if title in [podcast_name]:
+            continue
+        
+        duration_seconds = int(duration_sec)
+        duration_minutes = duration_seconds // 60
+        
+        episodes.append({
+            'eid': eid,
+            'title': title,
+            'url': f"https://www.xiaoyuzhoufm.com/episode/{eid}",
+            'duration': f"{duration_minutes}分钟",
+            'duration_seconds': duration_seconds,
+            'audio_url': audio_url,
+        })
+    
+    # 过滤超过20分钟的 + 最多返回3个
+    filtered = [e for e in episodes if e['duration_seconds'] <= 20 * 60]
+    if len(filtered) < len(episodes):
+        print(f"     🔇 过滤掉 {len(episodes) - len(filtered)} 个超过20分钟的单集")
+    return filtered[:3]
+
+
+def fetch_podcast_episodes(podcast):
+    """获取单个播客的最新单集"""
+    name = podcast['name']
+    url = podcast.get('url')
+    
+    if not url:
+        print(f"  ⏭️ {name}: 无小宇宙链接，跳过")
+        return []
+    
+    print(f"  📡 正在获取: {name}")
+    
+    html = fetch_page(url)
+    if not html:
+        return []
+    
+    episodes = extract_episodes_from_podcast_page(html, name)
+    
+    if episodes:
+        print(f"  ✅ 获取到 {len(episodes)} 个单集，最新: {episodes[0]['title'][:40]}...")
+        print(f"     时长: {episodes[0]['duration']}")
+    else:
+        print(f"  ⚠️ 未提取到单集数据")
+    
+    return episodes
+
+
+def load_podcasts():
+    """加载播客配置"""
+    with open(PODCASTS_FILE, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+def generate_html(daily_data):
+    """生成带播放器的HTML播放列表页面"""
+    today = datetime.now().strftime('%Y年%m月%d日')
+    weekday_names = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+    weekday = weekday_names[datetime.now().weekday()]
+    
+    # 统计总时长和收集所有可播放单集
+    total_minutes = 0
+    all_playable = []
+    
+    for item in daily_data['podcasts']:
+        for ep in item.get('episodes', []):
+            dur = ep.get('duration_seconds', 0)
+            total_minutes += dur // 60
+            if ep.get('audio_url'):
+                all_playable.append({
+                    'title': ep['title'],
+                    'podcast': item['name'],
+                    'audio_url': ep['audio_url'],
+                    'duration_seconds': ep.get('duration_seconds', 0),
+                    'url': ep['url'],
+                })
+    
+    total_duration = f"约{total_minutes}分钟" if total_minutes > 0 else "约2小时"
+    
+    # 分类组织
+    categories = {}
+    category_order = ['商业/科技', '商业新闻', '综合资讯', '科技/AI', '科技快讯', '财经', '美妆']
+    category_icons = {
+        '商业/科技': '💼', '商业新闻': '📈', '综合资讯': '📰',
+        '科技/AI': '🤖', '科技快讯': '⚡', '财经': '💰', '美妆': '💄',
+    }
+    
+    for item in daily_data['podcasts']:
+        cat = item['category']
+        if cat not in categories:
+            categories[cat] = []
+        categories[cat].append(item)
+    
+    # 构建播放列表 HTML 内容
+    episodes_html = ''
+    for category in category_order:
+        if category not in categories:
+            continue
+        items = categories[category]
+        icon = category_icons.get(category, '📻')
+        
+        episodes_html += f'''
+        <div class="category-section">
+            <div class="category-title">
+                <span class="category-icon">{icon}</span>
+                {category}
+            </div>
+'''
+        for item in items:
+            if item.get('episodes'):
+                ep = item['episodes'][0]
+                has_audio = 'true' if ep.get('audio_url') else 'false'
+                audio_url_escaped = ep.get('audio_url', '').replace("'", "\\'").replace('"', '&quot;')
+                episodes_html += f'''
+            <div class="episode-card" data-audio="{audio_url_escaped}" data-has-audio="{has_audio}" data-podcast="{item['name']}">
+                <div class="episode-header">
+                    <span class="podcast-name">{item['name']}</span>
+                    <span class="episode-meta">
+                        {f'<span>⏱ {ep.get("duration", "")}</span>' if ep.get('duration') else ''}
+                    </span>
+                </div>
+                <div class="episode-title">
+                    <a href="{ep['url']}" target="_blank">{ep['title']}</a>
+                </div>
+                <div class="episode-actions">
+                    {f'<button class="play-btn" onclick="playEpisode(this)" data-audio="{audio_url_escaped}">▶ 播放</button>' if ep.get('audio_url') else ''}
+                    <a href="{ep['url']}" target="_blank" class="link-btn">在小宇宙打开 ↗</a>
+                </div>
+            </div>
+'''
+            else:
+                podcast_url = next((p.get('url') for p in daily_data['podcasts_raw'] if p['name'] == item['name']), None)
+                if podcast_url:
+                    episodes_html += f'''
+            <div class="episode-card">
+                <div class="episode-header">
+                    <span class="podcast-name">{item['name']}</span>
+                </div>
+                <div class="no-update">今日暂无更新</div>
+                <div style="text-align: center; margin-top: 8px;">
+                    <a href="{podcast_url}" target="_blank" style="color: #667eea; font-size: 0.85em; text-decoration: none;">查看播客主页 →</a>
+                </div>
+            </div>
+'''
+                else:
+                    episodes_html += f'''
+            <div class="episode-card">
+                <div class="episode-header">
+                    <span class="podcast-name">{item['name']}</span>
+                </div>
+                <div class="no-update">暂未收录小宇宙链接</div>
+            </div>
+'''
+        
+        episodes_html += '''
+        </div>
+'''
+    
+    # 构建播放列表 JSON
+    playlist_json = json.dumps(all_playable, ensure_ascii=False)
+    
+    update_time = datetime.now().strftime('%Y-%m-%d %H:%M')
+    
+    html = f'''<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>每日播客早报 - {today}</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            padding-bottom: 140px;
+        }}
+        
+        .container {{ max-width: 900px; margin: 0 auto; }}
+        
+        .header {{
+            text-align: center; color: white; margin-bottom: 30px; padding: 20px;
+        }}
+        .header h1 {{
+            font-size: 2.2em; margin-bottom: 10px; text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }}
+        .header .date {{ font-size: 1.1em; opacity: 0.9; }}
+        .header .stats {{ margin-top: 15px; font-size: 0.95em; opacity: 0.85; }}
+        
+        .category-section {{
+            background: white; border-radius: 16px; padding: 20px;
+            margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }}
+        .category-title {{
+            font-size: 1.3em; color: #333; margin-bottom: 15px;
+            padding-bottom: 10px; border-bottom: 2px solid #f0f0f0;
+            display: flex; align-items: center; gap: 10px;
+        }}
+        .category-icon {{ font-size: 1.2em; }}
+        
+        .episode-card {{
+            background: #f8f9fa; border-radius: 12px; padding: 15px;
+            margin-bottom: 12px; transition: all 0.3s ease;
+            border: 1px solid #eee;
+        }}
+        .episode-card:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            border-color: #667eea;
+        }}
+        .episode-card.playing {{
+            border-color: #667eea;
+            background: linear-gradient(135deg, rgba(102,126,234,0.05) 0%, rgba(118,75,162,0.05) 100%);
+            box-shadow: 0 4px 16px rgba(102,126,234,0.2);
+        }}
+        .episode-card:last-child {{ margin-bottom: 0; }}
+        
+        .episode-header {{
+            display: flex; justify-content: space-between;
+            align-items: flex-start; margin-bottom: 8px;
+        }}
+        .podcast-name {{ font-size: 0.85em; color: #667eea; font-weight: 600; }}
+        .episode-meta {{ font-size: 0.8em; color: #999; display: flex; gap: 10px; }}
+        
+        .episode-title {{
+            font-size: 1em; color: #333; line-height: 1.5; margin-bottom: 10px;
+        }}
+        .episode-title a {{ color: inherit; text-decoration: none; }}
+        .episode-title a:hover {{ color: #667eea; }}
+        
+        .episode-actions {{
+            display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        }}
+        
+        .play-btn {{
+            display: inline-flex; align-items: center; gap: 6px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; padding: 8px 18px; border-radius: 20px;
+            font-size: 0.85em; font-weight: 500; border: none;
+            cursor: pointer; transition: all 0.3s ease;
+        }}
+        .play-btn:hover {{
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }}
+        .play-btn.is-playing {{
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }}
+        
+        .link-btn {{
+            color: #667eea; font-size: 0.85em; text-decoration: none;
+            padding: 8px 12px; border-radius: 20px;
+            border: 1px solid #e0e0e0; transition: all 0.2s;
+        }}
+        .link-btn:hover {{ background: #f0f0ff; border-color: #667eea; }}
+        
+        .no-update {{
+            color: #999; font-style: italic; font-size: 0.9em;
+            padding: 10px; text-align: center;
+        }}
+        
+        /* 底部固定播放器 */
+        .player-bar {{
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background: rgba(255,255,255,0.98);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-top: 1px solid rgba(0,0,0,0.08);
+            box-shadow: 0 -4px 20px rgba(0,0,0,0.1);
+            z-index: 1000; padding: 0;
+            transform: translateY(100%);
+            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }}
+        .player-bar.visible {{ transform: translateY(0); }}
+        
+        .player-progress-bar {{
+            width: 100%; height: 3px; background: #e8e8e8;
+            cursor: pointer; position: relative;
+        }}
+        .player-progress-fill {{
+            height: 100%; background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%; transition: width 0.3s linear; border-radius: 0 2px 2px 0;
+        }}
+        
+        .player-content {{
+            display: flex; align-items: center; padding: 12px 20px;
+            max-width: 900px; margin: 0 auto; gap: 15px;
+        }}
+        
+        .player-info {{
+            flex: 1; min-width: 0;
+        }}
+        .player-title {{
+            font-size: 0.9em; color: #333; font-weight: 500;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }}
+        .player-subtitle {{
+            font-size: 0.75em; color: #999; margin-top: 2px;
+        }}
+        
+        .player-controls {{
+            display: flex; align-items: center; gap: 8px;
+        }}
+        .player-controls button {{
+            background: none; border: none; cursor: pointer;
+            width: 36px; height: 36px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.2em; color: #333; transition: all 0.2s;
+        }}
+        .player-controls button:hover {{ background: #f0f0f0; }}
+        .player-controls .main-play-btn {{
+            width: 44px; height: 44px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; font-size: 1.3em;
+        }}
+        .player-controls .main-play-btn:hover {{
+            transform: scale(1.08);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }}
+        
+        .player-time {{
+            font-size: 0.75em; color: #999; white-space: nowrap;
+        }}
+        
+        .player-queue-btn {{
+            font-size: 0.8em !important; color: #667eea !important;
+            position: relative;
+        }}
+        .player-queue-btn .queue-count {{
+            position: absolute; top: -2px; right: -4px;
+            background: #f5576c; color: white; font-size: 0.6em;
+            width: 16px; height: 16px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+        }}
+        
+        /* 播放队列面板 */
+        .queue-panel {{
+            position: fixed; bottom: 80px; right: 20px;
+            width: 340px; max-height: 400px;
+            background: white; border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+            z-index: 1001; overflow: hidden;
+            transform: translateY(20px) scale(0.95);
+            opacity: 0; pointer-events: none;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }}
+        .queue-panel.visible {{
+            transform: translateY(0) scale(1);
+            opacity: 1; pointer-events: auto;
+        }}
+        .queue-panel-header {{
+            padding: 16px; font-weight: 600; font-size: 0.95em;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex; justify-content: space-between; align-items: center;
+        }}
+        .queue-panel-header button {{
+            background: none; border: none; cursor: pointer;
+            color: #667eea; font-size: 0.85em;
+        }}
+        .queue-list {{
+            max-height: 320px; overflow-y: auto; padding: 8px;
+        }}
+        .queue-item {{
+            padding: 10px 12px; border-radius: 8px; cursor: pointer;
+            display: flex; align-items: center; gap: 10px;
+            transition: background 0.2s; font-size: 0.85em;
+        }}
+        .queue-item:hover {{ background: #f8f9fa; }}
+        .queue-item.active {{ background: linear-gradient(135deg, rgba(102,126,234,0.1) 0%, rgba(118,75,162,0.1) 100%); }}
+        .queue-item-index {{
+            width: 20px; text-align: center; color: #999; font-size: 0.8em;
+        }}
+        .queue-item.active .queue-item-index {{ color: #667eea; font-weight: 600; }}
+        .queue-item-title {{
+            flex: 1; white-space: nowrap; overflow: hidden;
+            text-overflow: ellipsis; color: #333;
+        }}
+        .queue-item-dur {{ color: #999; font-size: 0.8em; white-space: nowrap; }}
+        
+        /* 全部播放按钮 */
+        .play-all-section {{
+            text-align: center; margin: 20px 0;
+        }}
+        .play-all-btn {{
+            display: inline-flex; align-items: center; gap: 8px;
+            background: white; color: #667eea;
+            padding: 12px 28px; border-radius: 30px;
+            font-size: 1em; font-weight: 600; border: 2px solid white;
+            cursor: pointer; transition: all 0.3s;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+        }}
+        .play-all-btn:hover {{
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(102,126,234,0.3);
+        }}
+        
+        .footer {{
+            text-align: center; color: white; padding: 20px;
+            font-size: 0.9em; opacity: 0.8;
+        }}
+        .footer a {{ color: white; text-decoration: underline; }}
+        .update-time {{
+            text-align: center; color: rgba(255,255,255,0.7);
+            font-size: 0.85em; margin-top: 10px;
+        }}
+        
+        @media (max-width: 600px) {{
+            .header h1 {{ font-size: 1.6em; }}
+            .category-section {{ padding: 15px; }}
+            .episode-card {{ padding: 12px; }}
+            .player-content {{ padding: 10px 15px; }}
+            .queue-panel {{ width: calc(100% - 20px); right: 10px; left: 10px; }}
+        }}
+        
+        /* 动画 */
+        @keyframes pulse {{
+            0%, 100% {{ opacity: 1; }}
+            50% {{ opacity: 0.5; }}
+        }}
+        .playing-indicator {{
+            display: inline-flex; gap: 2px; align-items: flex-end; height: 14px;
+        }}
+        .playing-indicator span {{
+            width: 3px; background: #667eea; border-radius: 1px;
+            animation: soundbar 0.6s ease-in-out infinite;
+        }}
+        .playing-indicator span:nth-child(1) {{ height: 6px; animation-delay: 0s; }}
+        .playing-indicator span:nth-child(2) {{ height: 10px; animation-delay: 0.15s; }}
+        .playing-indicator span:nth-child(3) {{ height: 4px; animation-delay: 0.3s; }}
+        @keyframes soundbar {{
+            0%, 100% {{ transform: scaleY(1); }}
+            50% {{ transform: scaleY(0.4); }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎧 每日播客早报</h1>
+            <div class="date">{today} {weekday}</div>
+            <div class="stats">
+                已收录 {daily_data['total_podcasts']} 档播客 · 
+                今日更新 {daily_data['updated_count']} 档 · 
+                预计收听时长 {total_duration}
+            </div>
+        </div>
+        
+        <div class="play-all-section">
+            <button class="play-all-btn" onclick="playAll()">
+                ▶ 从第一档开始连续播放
+            </button>
+        </div>
+
+{episodes_html}
+
+        <div class="footer">
+            <p>数据来源：<a href="https://www.xiaoyuzhoufm.com" target="_blank">小宇宙</a> · 每日自动更新</p>
+            <p style="margin-top: 8px; font-size: 0.85em;">
+                提示：点击"播放"可直接在页面内收听，支持自动连续播放
+            </p>
+        </div>
+        <div class="update-time">
+            上次更新：{update_time}
+        </div>
+    </div>
+    
+    <!-- 底部播放器 -->
+    <div class="player-bar" id="playerBar">
+        <div class="player-progress-bar" id="progressBar" onclick="seekAudio(event)">
+            <div class="player-progress-fill" id="progressFill"></div>
+        </div>
+        <div class="player-content">
+            <div class="player-info">
+                <div class="player-title" id="playerTitle">未在播放</div>
+                <div class="player-subtitle" id="playerSubtitle"></div>
+            </div>
+            <div class="player-time" id="playerTime"></div>
+            <div class="player-controls">
+                <button onclick="playPrev()" title="上一个">⏮</button>
+                <button class="main-play-btn" id="mainPlayBtn" onclick="togglePlay()">▶</button>
+                <button onclick="playNext()" title="下一个">⏭</button>
+                <button class="player-queue-btn" onclick="toggleQueue()" title="播放列表">
+                    ☰<span class="queue-count" id="queueCount">{len(all_playable)}</span>
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 播放队列面板 -->
+    <div class="queue-panel" id="queuePanel">
+        <div class="queue-panel-header">
+            <span>播放列表 ({len(all_playable)} 期)</span>
+            <button onclick="toggleQueue()">收起</button>
+        </div>
+        <div class="queue-list" id="queueList"></div>
+    </div>
+
+    <script>
+        // 播放列表数据
+        const playlist = {playlist_json};
+        
+        // 播放器状态
+        let audio = new Audio();
+        let currentIndex = -1;
+        let isPlaying = false;
+        let queueVisible = false;
+        
+        // 初始化
+        audio.addEventListener('timeupdate', updateProgress);
+        audio.addEventListener('ended', onEpisodeEnded);
+        audio.addEventListener('loadedmetadata', onMetadataLoaded);
+        audio.addEventListener('error', onAudioError);
+        
+        // 构建队列面板
+        function buildQueueList() {{
+            const list = document.getElementById('queueList');
+            list.innerHTML = playlist.map((item, i) => {{
+                const dur = Math.round(item.duration_seconds / 60);
+                return `<div class="queue-item" id="queue-item-${{i}}" onclick="playByIndex(${{i}})">
+                    <span class="queue-item-index">${{i + 1}}</span>
+                    <span class="queue-item-title">${{item.title}}</span>
+                    <span class="queue-item-dur">${{dur}}min</span>
+                </div>`;
+            }}).join('');
+        }}
+        buildQueueList();
+        
+        // 播放指定索引
+        function playByIndex(index) {{
+            if (index < 0 || index >= playlist.length) return;
+            currentIndex = index;
+            const item = playlist[index];
+            audio.src = item.audio_url;
+            audio.play().then(() => {{
+                isPlaying = true;
+                updatePlayerUI();
+            }}).catch(e => {{
+                console.error('播放失败:', e);
+                alert('播放失败，可能是音频链接已过期。请点击"在小宇宙打开"前往收听。');
+            }});
+        }}
+        
+        // 从卡片按钮播放
+        function playEpisode(btn) {{
+            const audioUrl = btn.dataset.audio;
+            const index = playlist.findIndex(p => p.audio_url === audioUrl);
+            if (index >= 0) {{
+                playByIndex(index);
+            }}
+        }}
+        
+        // 全部连续播放
+        function playAll() {{
+            if (playlist.length > 0) {{
+                playByIndex(0);
+            }}
+        }}
+        
+        // 播放/暂停切换
+        function togglePlay() {{
+            if (currentIndex < 0) {{
+                playAll();
+                return;
+            }}
+            if (isPlaying) {{
+                audio.pause();
+                isPlaying = false;
+            }} else {{
+                audio.play();
+                isPlaying = true;
+            }}
+            updatePlayerUI();
+        }}
+        
+        // 下一个
+        function playNext() {{
+            if (currentIndex < playlist.length - 1) {{
+                playByIndex(currentIndex + 1);
+            }}
+        }}
+        
+        // 上一个
+        function playPrev() {{
+            if (currentIndex > 0) {{
+                playByIndex(currentIndex - 1);
+            }}
+        }}
+        
+        // 单集播完自动下一个
+        function onEpisodeEnded() {{
+            if (currentIndex < playlist.length - 1) {{
+                playByIndex(currentIndex + 1);
+            }} else {{
+                isPlaying = false;
+                updatePlayerUI();
+            }}
+        }}
+        
+        // 音频加载完成
+        function onMetadataLoaded() {{
+            document.getElementById('playerTime').textContent = 
+                formatTime(audio.duration);
+        }}
+        
+        // 音频错误处理
+        function onAudioError() {{
+            console.error('音频加载错误');
+            document.getElementById('playerTitle').textContent = '加载失败，请尝试在小宇宙收听';
+        }}
+        
+        // 更新进度条
+        function updateProgress() {{
+            if (audio.duration) {{
+                const pct = (audio.currentTime / audio.duration) * 100;
+                document.getElementById('progressFill').style.width = pct + '%';
+                
+                const remaining = audio.duration - audio.currentTime;
+                document.getElementById('playerTime').textContent = 
+                    '-' + formatTime(remaining);
+            }}
+        }}
+        
+        // 拖动进度条
+        function seekAudio(e) {{
+            if (audio.duration) {{
+                const bar = document.getElementById('progressBar');
+                const rect = bar.getBoundingClientRect();
+                const pct = (e.clientX - rect.left) / rect.width;
+                audio.currentTime = pct * audio.duration;
+            }}
+        }}
+        
+        // 更新播放器 UI
+        function updatePlayerUI() {{
+            const bar = document.getElementById('playerBar');
+            const btn = document.getElementById('mainPlayBtn');
+            const title = document.getElementById('playerTitle');
+            const subtitle = document.getElementById('playerSubtitle');
+            
+            if (currentIndex >= 0) {{
+                bar.classList.add('visible');
+                const item = playlist[currentIndex];
+                title.textContent = item.title;
+                subtitle.textContent = item.podcast;
+                btn.textContent = isPlaying ? '⏸' : '▶';
+                
+                // 更新队列高亮
+                document.querySelectorAll('.queue-item').forEach((el, i) => {{
+                    el.classList.toggle('active', i === currentIndex);
+                }});
+                
+                // 更新卡片状态
+                document.querySelectorAll('.episode-card').forEach(card => {{
+                    const cardAudio = card.dataset.audio;
+                    if (cardAudio === item.audio_url) {{
+                        card.classList.add('playing');
+                        const playBtn = card.querySelector('.play-btn');
+                        if (playBtn) {{
+                            playBtn.textContent = isPlaying ? '⏸ 暂停' : '▶ 播放';
+                            playBtn.classList.toggle('is-playing', isPlaying);
+                        }}
+                    }} else {{
+                        card.classList.remove('playing');
+                        const playBtn = card.querySelector('.play-btn');
+                        if (playBtn) {{
+                            playBtn.textContent = '▶ 播放';
+                            playBtn.classList.remove('is-playing');
+                        }}
+                    }}
+                }});
+                
+                // 滚动队列到当前项
+                const activeItem = document.getElementById('queue-item-' + currentIndex);
+                if (activeItem && queueVisible) {{
+                    activeItem.scrollIntoView({{ behavior: 'smooth', block: 'nearest' }});
+                }}
+            }} else {{
+                btn.textContent = '▶';
+            }}
+        }}
+        
+        // 切换队列面板
+        function toggleQueue() {{
+            queueVisible = !queueVisible;
+            document.getElementById('queuePanel').classList.toggle('visible', queueVisible);
+        }}
+        
+        // 格式化时间
+        function formatTime(seconds) {{
+            if (!seconds || isNaN(seconds)) return '0:00';
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return m + ':' + (s < 10 ? '0' : '') + s;
+        }}
+        
+        // 键盘快捷键
+        document.addEventListener('keydown', (e) => {{
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            switch(e.code) {{
+                case 'Space':
+                    e.preventDefault();
+                    togglePlay();
+                    break;
+                case 'ArrowRight':
+                    if (e.shiftKey) playNext();
+                    break;
+                case 'ArrowLeft':
+                    if (e.shiftKey) playPrev();
+                    break;
+            }}
+        }});
+    </script>
+</body>
+</html>
+'''
+    
+    return html
+
+
+def send_pushplus_notification(page_url, daily_data, playable_count):
+    """通过 PushPlus 发送微信通知"""
+    # 加载配置
+    if not os.path.exists(CONFIG_FILE):
+        print("⚠️ 未找到配置文件，跳过微信推送")
+        return False
+    
+    with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+        config = json.load(f)
+    
+    token = config.get('pushplus_token', '')
+    if not token:
+        print("⚠️ 未配置 PushPlus token，跳过微信推送")
+        return False
+    
+    today = datetime.now().strftime('%m月%d日')
+    weekday_names = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+    weekday = weekday_names[datetime.now().weekday()]
+    
+    # 计算总时长
+    total_minutes = 0
+    for item in daily_data['podcasts']:
+        for ep in item.get('episodes', []):
+            dur = ep.get('duration_seconds', 0)
+            total_minutes += dur // 60
+    
+    # 构建推送内容 - 直接嵌入完整播放页面（含播放器+自动连播）
+    title = f"🎧 播客早报 | {today} {weekday}"
+    
+    # 读取生成的播放页面HTML
+    if os.path.exists(OUTPUT_FILE):
+        with open(OUTPUT_FILE, 'r', encoding='utf-8') as f:
+            content_html = f.read()
+        print("  📄 已加载完整播放页面用于推送")
+    else:
+        # fallback: 无HTML文件时发送摘要+音频链接
+        content_html = f"""
+        <h3>🎧 每日播客早报 - {today} {weekday}</h3>
+        <p>今日更新 <b>{daily_data['updated_count']}</b> 档播客，共 <b>{playable_count}</b> 期可收听</p>
+        <hr>
+        """
+        for item in daily_data['podcasts']:
+            if item.get('episodes'):
+                ep = item['episodes'][0]
+                dur = ep.get('duration', '未知')
+                audio_url = ep.get('audio_url', '')
+                content_html += f"""<p>✅ <b>{item['name']}</b> ({dur})<br><a href="{audio_url}">🔊 点击播放</a></p>"""
+            else:
+                content_html += f"""<p style="color:#999">❌ {item['name']} - 今日无更新</p>"""
+    
+    # 发送请求
+    try:
+        payload = json.dumps({
+            'token': token,
+            'title': title,
+            'content': content_html,
+            'template': 'html',
+            'channel': 'wechat',
+        }).encode('utf-8')
+        
+        req = Request(
+            'https://www.pushplus.plus/send',
+            data=payload,
+            headers={'Content-Type': 'application/json'},
+            method='POST'
+        )
+        with urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read().decode('utf-8'))
+            if result.get('code') == 200:
+                print(f"✅ 微信推送成功！")
+                return True
+            else:
+                print(f"⚠️ 推送返回: {result.get('msg', '未知错误')}")
+                return False
+    except Exception as e:
+        print(f"⚠️ 推送失败: {e}")
+        return False
+
+
+def main():
+    """主函数"""
+    print("=" * 50)
+    print("🎧 播客聚合器 - 每日更新")
+    print("=" * 50)
+    print()
+    
+    # 加载配置
+    config = load_podcasts()
+    podcasts = config['podcasts']
+    
+    print(f"📋 已加载 {len(podcasts)} 档播客配置")
+    print()
+    
+    # 获取每个播客的最新单集
+    daily_data = {
+        'date': datetime.now().strftime('%Y-%m-%d'),
+        'total_podcasts': len(podcasts),
+        'updated_count': 0,
+        'podcasts': [],
+        'podcasts_raw': podcasts
+    }
+    
+    for podcast in podcasts:
+        episodes = fetch_podcast_episodes(podcast)
+        
+        podcast_data = {
+            'name': podcast['name'],
+            'category': podcast['category'],
+            'episodes': episodes
+        }
+        daily_data['podcasts'].append(podcast_data)
+        
+        if episodes:
+            daily_data['updated_count'] += 1
+        print()
+    
+    # 生成HTML
+    print("📄 正在生成播放列表页面...")
+    html = generate_html(daily_data)
+    
+    with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
+        f.write(html)
+    
+    print(f"✅ 已保存到: {OUTPUT_FILE}")
+    print()
+    print("=" * 50)
+    print(f"📊 统计: {daily_data['updated_count']}/{daily_data['total_podcasts']} 档播客有更新")
+    
+    # 统计可播放数量
+    playable = sum(1 for p in daily_data['podcasts'] 
+                   for e in p.get('episodes', []) if e.get('audio_url'))
+    print(f"🎵 可播放单集: {playable} 期")
+    print("=" * 50)
+    
+    # 发送微信推送（如果传入了页面URL）
+    if len(sys.argv) > 1 and sys.argv[1].startswith('http'):
+        page_url = sys.argv[1]
+        print(f"\n📱 正在发送微信推送...")
+        send_pushplus_notification(page_url, daily_data, playable)
+    elif os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, 'r') as f:
+            cfg = json.load(f)
+        if cfg.get('pushplus_token'):
+            print("\n💡 提示: 运行 `python3 fetch_podcasts.py <页面URL>` 可同步推送微信通知")
+
+
+if __name__ == '__main__':
+    main()
