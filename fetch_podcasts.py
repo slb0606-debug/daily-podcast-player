@@ -935,6 +935,17 @@ def sync_to_github(updated_count):
     print("\n🔄 正在同步到 GitHub Pages...")
     try:
         today = datetime.now().strftime('%Y-%m-%d')
+        
+        # 获取 gh auth token 并配置 remote
+        r = subprocess.run(['gh', 'auth', 'token'], capture_output=True, text=True, timeout=10)
+        if r.returncode == 0:
+            token = r.stdout.strip()
+            subprocess.run(
+                ['git', 'remote', 'set-url', 'origin',
+                 f'https://x-access-token:{token}@github.com/slb0606-debug/daily-podcast-player.git'],
+                cwd=SCRIPT_DIR, capture_output=True, text=True, timeout=10
+            )
+        
         cmds = [
             ['git', 'add', 'index.html', 'daily_playlist.html'],
             ['git', 'commit', '-m', f'Update {today} ({updated_count} podcasts)'],
@@ -942,7 +953,7 @@ def sync_to_github(updated_count):
         ]
         for cmd in cmds:
             r = subprocess.run(cmd, cwd=SCRIPT_DIR, capture_output=True, text=True, timeout=30)
-            if r.returncode != 0 and cmd[1] != 'commit':  # commit 无变更时返回1是正常的
+            if r.returncode != 0 and cmd[1] != 'commit':
                 print(f"  ⚠️ git 命令失败: {' '.join(cmd)} -> {r.stderr.strip()}")
                 return False
         print(f"✅ 已同步到 GitHub Pages: {PAGE_URL}")
