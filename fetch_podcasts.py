@@ -365,6 +365,11 @@ def generate_html(daily_data):
             font-size: 1.2em; color: #333; transition: all 0.2s;
         }}
         .player-controls button:hover {{ background: #f0f0f0; }}
+        .player-controls .seek-btn {{
+            font-size: 0.7em !important; font-weight: bold; color: #667eea;
+            width: 32px; height: 32px;
+        }}
+        .player-controls .seek-btn:hover {{ background: #eef0ff; }}
         .player-controls .main-play-btn {{
             width: 44px; height: 44px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -533,9 +538,9 @@ def generate_html(daily_data):
             </div>
             <div class="player-time" id="playerTime"></div>
             <div class="player-controls">
-                <button onclick="playPrev()" title="上一个">⏮</button>
+                <button class="seek-btn" onclick="seekBackward()" title="后退15秒">-15s</button>
                 <button class="main-play-btn" id="mainPlayBtn" onclick="togglePlay()">▶</button>
-                <button onclick="playNext()" title="下一个">⏭</button>
+                <button class="seek-btn" onclick="seekForward()" title="快进15秒">+15s</button>
                 <button class="player-queue-btn" onclick="toggleQueue()" title="播放列表">
                     ☰<span class="queue-count" id="queueCount">{len(all_playable)}</span>
                 </button>
@@ -684,6 +689,20 @@ def generate_html(daily_data):
                 const rect = bar.getBoundingClientRect();
                 const pct = (e.clientX - rect.left) / rect.width;
                 audio.currentTime = pct * audio.duration;
+            }}
+        }}
+        
+        // 快进15秒
+        function seekForward() {{
+            if (audio && audio.duration) {{
+                audio.currentTime = Math.min(audio.currentTime + 15, audio.duration);
+            }}
+        }}
+        
+        // 后退15秒
+        function seekBackward() {{
+            if (audio) {{
+                audio.currentTime = Math.max(audio.currentTime - 15, 0);
             }}
         }}
         
