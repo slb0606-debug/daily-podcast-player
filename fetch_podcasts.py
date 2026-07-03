@@ -9,8 +9,12 @@ import re
 import os
 import sys
 from datetime import datetime
-from urllib.request import urlopen, Request
+from urllib.request import urlopen, Request, getproxies
 from urllib.error import URLError, HTTPError
+from urllib.request import ProxyHandler, build_opener
+
+# 获取系统代理（如果需要）
+PROXIES = getproxies()
 
 # 配置
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -27,11 +31,16 @@ HEADERS = {
 }
 
 
+# 创建不使用代理的 opener（云端环境代理不可用）
+_NO_PROXY_OPENER = build_opener(ProxyHandler({}))
+
+
 def fetch_page(url):
     """获取页面内容"""
     try:
         req = Request(url, headers=HEADERS)
-        with urlopen(req, timeout=30) as response:
+        # 使用无代理 opener，绕过环境变量中的代理设置
+        with _NO_PROXY_OPENER.open(req, timeout=30) as response:
             return response.read().decode('utf-8', errors='ignore')
     except (URLError, HTTPError) as e:
         print(f"  ⚠️ 请求失败: {e}")
@@ -819,34 +828,16 @@ def send_pushplus_notification(page_url, daily_data, playable_count):
             dur = ep.get('duration_seconds', 0)
             total_minutes += dur // 60
     
-    # 构建推送内容 - 摘要 + GitHub Pages 播放页面链接
+    # 构建推送内容 - 简洁版：一句话 + 播放按钮
     title = f"🎧 播客早报 | {today} {weekday}"
     
     content_html = f"""
-    <h3>🎧 每日播客早报 - {today} {weekday}</h3>
-    <p>今日更新 <b>{daily_data['updated_count']}</b> 档播客，共 <b>{playable_count}</b> 期可收听，预计时长 <b>{total_minutes}分钟</b></p>
-    <hr>
-    """
-    
-    # 按播客列出更新
-    for item in daily_data['podcasts']:
-        if item.get('episodes'):
-            ep = item['episodes'][0]
-            dur = ep.get('duration', '未知')
-            ep_title = ep['title'][:60] + ('...' if len(ep['title']) > 60 else '')
-            content_html += f"""
-            <p>✅ <b>{item['name']}</b> | {dur}<br>
-            <span style="color:#666;font-size:0.9em">{ep_title}</span></p>
-            """
-        else:
-            content_html += f"""<p style="color:#999">❌ {item['name']} - 今日无更新</p>"""
-    
-    content_html += f"""
-    <hr>
-    <p style="text-align:center;margin-top:20px">
-    <a href="{PAGE_URL}" style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;padding:10px 24px;border-radius:20px;text-decoration:none;font-weight:bold">🎧 打开播放页面</a>
+    <p style="text-align:center;font-size:1.1em;line-height:1.8">
+    今日收录 <b>{playable_count}</b> 期播客，共 <b>{total_minutes}</b> 分钟
     </p>
-    <p style="color:#999;font-size:0.8em;text-align:center;margin-top:10px">支持页面内直接播放 · 自动连续播放</p>
+    <p style="text-align:center;margin-top:20px">
+    <a href="{PAGE_URL}" style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;padding:12px 28px;border-radius:24px;text-decoration:none;font-weight:bold;display:inline-block">🎧 打开播放</a>
+    </p>
     """
     
     # 发送请求
@@ -865,7 +856,7 @@ def send_pushplus_notification(page_url, daily_data, playable_count):
             headers={'Content-Type': 'application/json'},
             method='POST'
         )
-        with urlopen(req, timeout=15) as resp:
+        with _NO_PROXY_OPENER.open(req, timeout=15) as resp:
             result = json.loads(resp.read().decode('utf-8'))
             if result.get('code') == 200:
                 print(f"✅ 微信推送成功！")
@@ -955,15 +946,23 @@ def sync_to_github(updated_count):
     try:
         today = datetime.now().strftime('%Y-%m-%d')
         
+        # 配置 git 用户信息（防止 config 被清空）
+        subprocess.run(['git', 'config', 'user.name', 'slb0606-debug'], cwd=SCRIPT_DIR, capture_output=True, text=True, timeout=5)
+        subprocess.run(['git', 'config', 'user.email', 'slb0606-debug@users.noreply.github.com'], cwd=SCRIPT_DIR, capture_output=True, text=True, timeout=5)
+        
         # 获取 gh auth token 并配置 remote
         r = subprocess.run(['gh', 'auth', 'token'], capture_output=True, text=True, timeout=10)
         if r.returncode == 0:
             token = r.stdout.strip()
-            subprocess.run(
-                ['git', 'remote', 'set-url', 'origin',
-                 f'https://x-access-token:{token}@github.com/slb0606-debug/daily-podcast-player.git'],
-                cwd=SCRIPT_DIR, capture_output=True, text=True, timeout=10
-            )
+            remote_url = f'https://x-access-token:{token}@github.com/slb0606-debug/daily-podcast-player.git'
+            # 先检查 remote 是否存在，不存在则 add，存在则 set-url
+            r_check = subprocess.run(['git', 'remote'], cwd=SCRIPT_DIR, capture_output=True, text=True, timeout=5)
+            if 'origin' in r_check.stdout:
+                subprocess.run(['git', 'remote', 'set-url', 'origin', remote_url], cwd=SCRIPT_DIR, capture_output=True, text=True, timeout=10)
+            else:
+                subprocess.run(['git', 'remote', 'add', 'origin', remote_url], cwd=SCRIPT_DIR, capture_output=True, text=True, timeout=10)
+            # 确保分支跟踪 remote
+            subprocess.run(['git', 'branch', '--set-upstream-to=origin/master', 'master'], cwd=SCRIPT_DIR, capture_output=True, text=True, timeout=10)
         
         cmds = [
             ['git', 'add', 'index.html', 'daily_playlist.html'],
