@@ -2,7 +2,7 @@
   "name": "每日播客早报",
   "short_name": "播客早报",
   "description": "每日自动聚合小宇宙播客最新单集",
-  "start_url": "./index.html",
+  "start_url": "./index.html?pwa=2",
   "display": "standalone",
   "background_color": "#667eea",
   "theme_color": "#667eea",
