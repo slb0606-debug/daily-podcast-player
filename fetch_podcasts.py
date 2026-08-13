@@ -116,6 +116,65 @@ def load_podcasts():
         return json.load(f)
 
 
+def generate_manifest():
+    """生成 PWA manifest.json"""
+    manifest = {
+        "name": "每日播客早报",
+        "short_name": "播客早报",
+        "description": "每日自动聚合小宇宙播客最新单集",
+        "start_url": "./index.html?pwa=2",
+        "display": "standalone",
+        "background_color": "#667eea",
+        "theme_color": "#667eea",
+        "icons": [
+            {
+                "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='40' fill='%23667eea'/%3E%3Ctext x='96' y='130' font-size='100' text-anchor='middle' fill='white'%3E%F0%9F%8E%A7%3C/text%3E%3C/svg%3E",
+                "sizes": "192x192",
+                "type": "image/svg+xml"
+            },
+            {
+                "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='106' fill='%23667eea'/%3E%3Ctext x='256' y='350' font-size='270' text-anchor='middle' fill='white'%3E%F0%9F%8E%A7%3C/text%3E%3C/svg%3E",
+                "sizes": "512x512",
+                "type": "image/svg+xml"
+            }
+        ]
+    }
+    return json.dumps(manifest, ensure_ascii=False, indent=2)
+
+
+def generate_service_worker():
+    """生成 Service Worker"""
+    return '''// Service Worker for 每日播客早报 v2
+const CACHE_NAME = 'podcast-daily-v2';
+
+self.addEventListener('install', (e) => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (e) => {
+  e.waitUntil(
+    caches.keys().then(keys =>
+      Promise.all(keys.map(k => caches.delete(k)))
+    ).then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('fetch', (e) => {
+  if (e.request.method !== 'GET') return;
+  const url = new URL(e.request.url);
+  if (url.origin !== location.origin) return;
+  if (e.request.destination === 'audio' || url.pathname.endsWith('.mp3') || url.pathname.endsWith('.m4a')) return;
+
+  // 纯网络优先：绝不缓存 HTML，只用缓存做离线兜底
+  e.respondWith(
+    fetch(e.request, { cache: 'no-store' }).catch(() =>
+      caches.match(e.request).then(r => r || caches.match('./index.html'))
+    )
+  );
+});
+'''
+
+
 def generate_html(daily_data):
     """生成带播放器的HTML播放列表页面"""
     today = datetime.now().strftime('%Y年%m月%d日')
@@ -230,7 +289,15 @@ def generate_html(daily_data):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>每日播客早报 - {today}</title>
+    <meta name="theme-color" content="#667eea">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="播客早报">
+    <link rel="manifest" href="manifest.json">
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         
@@ -502,9 +569,33 @@ def generate_html(daily_data):
             0%, 100% {{ transform: scaleY(1); }}
             50% {{ transform: scaleY(0.4); }}
         }}
+        /* 微信引导横幅 */
+        .wechat-banner {{
+            display: none;
+            background: #07c160;
+            color: white;
+            padding: 12px 20px;
+            text-align: center;
+            font-size: 0.9em;
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            cursor: pointer;
+        }}
+        .wechat-banner.show {{ display: block; }}
+        .wechat-banner .arrow {{
+            position: absolute;
+            top: 10px;
+            right: 20px;
+            font-size: 1.5em;
+        }}
     </style>
 </head>
 <body>
+    <div class="wechat-banner" id="wechatBanner" onclick="document.getElementById('wechatBanner').style.display='none'">
+        <span class="arrow">↗</span>
+        🔊 当前在微信内打开，音频切到后台会暂停。请点击右上角 <b>···</b> → <b>在浏览器中打开</b>，可支持后台播放
+    </div>
     <div class="container">
         <div class="header">
             <h1>🎧 每日播客早报</h1>
@@ -527,7 +618,7 @@ def generate_html(daily_data):
         <div class="footer">
             <p>数据来源：<a href="https://www.xiaoyuzhoufm.com" target="_blank">小宇宙</a> · 每日自动更新</p>
             <p style="margin-top: 8px; font-size: 0.85em;">
-                提示：点击"播放"可直接在页面内收听，支持自动连续播放
+                💡 添加到桌面后可后台播放（浏览器菜单 → 添加到主屏幕）
             </p>
         </div>
         <div class="update-time">
@@ -567,11 +658,22 @@ def generate_html(daily_data):
     </div>
 
     <script>
+        // 微信环境检测
+        (function() {{
+            const ua = navigator.userAgent.toLowerCase();
+            const isWeChat = ua.includes('micromessenger');
+            if (isWeChat) {{
+                document.getElementById('wechatBanner').classList.add('show');
+            }}
+        }})();
+        
         // 播放列表数据
         const playlist = {playlist_json};
         
         // 播放器状态
         let audio = new Audio();
+        audio.setAttribute('playsinline', '');
+        audio.setAttribute('webkit-playsinline', '');
         let currentIndex = -1;
         let isPlaying = false;
         let queueVisible = false;
@@ -581,6 +683,30 @@ def generate_html(daily_data):
         audio.addEventListener('ended', onEpisodeEnded);
         audio.addEventListener('loadedmetadata', onMetadataLoaded);
         audio.addEventListener('error', onAudioError);
+        audio.addEventListener('play', () => {{ isPlaying = true; updatePlayerUI(); updateMediaSession(); }});
+        audio.addEventListener('pause', () => {{ isPlaying = false; updatePlayerUI(); }});
+        
+        // Media Session API - 锁屏/通知栏媒体控制
+        function updateMediaSession() {{
+            if (!('mediaSession' in navigator) || currentIndex < 0) return;
+            const item = playlist[currentIndex];
+            navigator.mediaSession.metadata = new MediaMetadata({{
+                title: item.title,
+                artist: item.podcast,
+                album: '每日播客早报',
+            }});
+            navigator.mediaSession.setActionHandler('play', () => {{ audio.play(); }});
+            navigator.mediaSession.setActionHandler('pause', () => {{ audio.pause(); }});
+            navigator.mediaSession.setActionHandler('previoustrack', playPrev);
+            navigator.mediaSession.setActionHandler('nexttrack', playNext);
+            navigator.mediaSession.setActionHandler('seekbackward', () => {{ audio.currentTime = Math.max(0, audio.currentTime - 15); }});
+            navigator.mediaSession.setActionHandler('seekforward', () => {{ audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 15); }});
+        }}
+        
+        // 注册 Service Worker (PWA)
+        if ('serviceWorker' in navigator) {{
+            navigator.serviceWorker.register('sw.js').catch(() => {{}});
+        }}
         
         // 构建队列面板
         function buildQueueList() {{
@@ -915,6 +1041,15 @@ def main():
     with open(INDEX_FILE, 'w', encoding='utf-8') as f:
         f.write(html)
     
+    # 生成 PWA 文件
+    manifest_path = os.path.join(SCRIPT_DIR, 'manifest.json')
+    sw_path = os.path.join(SCRIPT_DIR, 'sw.js')
+    with open(manifest_path, 'w', encoding='utf-8') as f:
+        f.write(generate_manifest())
+    with open(sw_path, 'w', encoding='utf-8') as f:
+        f.write(generate_service_worker())
+    print(f"✅ PWA 文件已生成: manifest.json, sw.js")
+    
     print(f"✅ 已保存到: {OUTPUT_FILE}")
     print()
     print("=" * 50)
@@ -965,7 +1100,7 @@ def sync_to_github(updated_count):
             subprocess.run(['git', 'branch', '--set-upstream-to=origin/master', 'master'], cwd=SCRIPT_DIR, capture_output=True, text=True, timeout=10)
         
         cmds = [
-            ['git', 'add', 'index.html', 'daily_playlist.html'],
+            ['git', 'add', 'index.html', 'daily_playlist.html', 'manifest.json', 'sw.js'],
             ['git', 'commit', '-m', f'Update {today} ({updated_count} podcasts)'],
             ['git', 'push'],
         ]
